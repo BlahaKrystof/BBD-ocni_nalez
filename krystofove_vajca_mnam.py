@@ -1,0 +1,1 @@
+print("pocicmaj mi kara")
