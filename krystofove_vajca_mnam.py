@@ -1,1 +1,0 @@
-print("pocicmaj mi kara")
