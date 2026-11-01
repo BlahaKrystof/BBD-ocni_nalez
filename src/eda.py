@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-SLOZKA = Path(__file__).resolve().parent
+SLOZKA = Path(__file__).resolve().parent.parent
 """Adresář, ve kterém leží tento skript; cesty se skládají relativně k němu."""
 
 DATA_PATH = SLOZKA / "data" / "ocni_nalez.csv"
