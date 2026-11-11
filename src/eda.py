@@ -31,7 +31,7 @@ import pandas as pd
 SLOZKA = Path(__file__).resolve().parent.parent
 """Adresář, ve kterém leží tento skript; cesty se skládají relativně k němu."""
 
-DATA_PATH = SLOZKA / "data" / "ocni_nalez.csv"
+DATA_PATH = SLOZKA / "data" / "train.csv"
 """Výchozí cesta k datům, pokud není zadána v příkazové řádce."""
 
 GRAFY = SLOZKA / "graphs"

@@ -280,10 +280,12 @@ def build_preprocessor(
 if __name__ == "__main__":
     import sys
     from io import BytesIO
-
+    from pathlib import Path
     import joblib
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "C:/Users/blaha/PycharmProjects/BBD-ocni_nalez/data/train.csv"
+    SLOZKA = Path(__file__).resolve().parent.parent
+    path = sys.argv[1] if len(sys.argv) > 1 else SLOZKA / "data" / "train.csv"
+
     X, y = load_xy(path)
     print("Chybějící hodnoty:\n", missing_report(X), "\n")
 
