@@ -197,7 +197,11 @@ def vyber_prah(
 
 
 if __name__ == "__main__":
-    # Porovnání modelů s kompletním předzpracováním (iterativní imputace) + doba běhu.
+    # Porovnání modelů s kompletním předzpracováním + doba běhu.
+    # Imputer se zadá tady, nebo z příkazové řádky:
+    #   python -m src.validation knn
+    # Možnosti: median | mean | knn | iterative
+    import sys
     import time
 
     from sklearn.ensemble import RandomForestClassifier
@@ -208,18 +212,21 @@ if __name__ == "__main__":
     from dataio.loader import nacti_xy
     from src.preprocessing import build_preprocessor
 
+    IMPUTER = sys.argv[1] if len(sys.argv) > 1 else "iterative"
+
     X, y = nacti_xy()
 
     def prep():
         # nová instance pro každý model (pipeline se nesmí sdílet)
-        return build_preprocessor(imputer="iterative")
+        return build_preprocessor(imputer=IMPUTER)
 
+    # název imputeru se automaticky přidá do názvu modelu (např. logreg_knn)
     modely = {
-        "logreg_iterative": make_pipeline(prep(), LogisticRegression(max_iter=2000)),
-        "rf_iterative": make_pipeline(
+        f"logreg_{IMPUTER}": make_pipeline(prep(), LogisticRegression(max_iter=2000)),
+        f"rf_{IMPUTER}": make_pipeline(
             prep(), RandomForestClassifier(n_estimators=200, random_state=SEED)
         ),
-        "knn_iterative": make_pipeline(
+        f"knn_{IMPUTER}": make_pipeline(
             prep(), KNeighborsClassifier(n_neighbors=15, weights="distance")
         ),
     }
@@ -239,5 +246,6 @@ if __name__ == "__main__":
             "cas_fold_s": cas / len(v["scores"]),      # průměrně na jeden fold
         }
     tab = pd.DataFrame(radky).T.sort_values("mcc_mean", ascending=False)
+    print(f"Imputer: {IMPUTER}\n")
     print(tab.round(4).to_string())
     print(f"\nCelková doba běhu: {time.perf_counter() - celkem_start:.1f} s")
