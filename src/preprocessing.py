@@ -246,7 +246,7 @@ def build_preprocessor(
     log: bool = True,
     missing: str | None = "count",
     engineer: bool = True,
-    n_neighbors: int = 7,
+    n_neighbors: int = 14,
 ) -> Pipeline:
     """Složí celé předzpracování do jedné Pipeline.
 

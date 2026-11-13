@@ -197,31 +197,47 @@ def vyber_prah(
 
 
 if __name__ == "__main__":
-    # Ukázka: baseline modely (medián + škálování) na stejných foldech.
+    # Porovnání modelů s kompletním předzpracováním (iterativní imputace) + doba běhu.
+    import time
+
     from sklearn.ensemble import RandomForestClassifier
-    from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LogisticRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
     from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.pipeline import make_pipeline
 
     from dataio.loader import nacti_xy
+    from src.preprocessing import build_preprocessor
 
     X, y = nacti_xy()
+
+    def prep():
+        # nová instance pro každý model (pipeline se nesmí sdílet)
+        return build_preprocessor(imputer="iterative")
+
     modely = {
-        "logreg_median": make_pipeline(
-            SimpleImputer(strategy="median"),
-            StandardScaler(),
-            LogisticRegression(max_iter=2000),
+        "logreg_iterative": make_pipeline(prep(), LogisticRegression(max_iter=2000)),
+        "rf_iterative": make_pipeline(
+            prep(), RandomForestClassifier(n_estimators=200, random_state=SEED)
         ),
-        "rf_median": make_pipeline(
-            SimpleImputer(strategy="median"),
-            RandomForestClassifier(n_estimators=200, random_state=SEED),
-        ),
-        "knn_median": make_pipeline(
-            SimpleImputer(strategy="median"),
-            StandardScaler(),
-            KNeighborsClassifier(n_neighbors=15, weights="distance"),
+        "knn_iterative": make_pipeline(
+            prep(), KNeighborsClassifier(n_neighbors=15, weights="distance")
         ),
     }
-    print(porovnej(modely, X, y).round(4).to_string())
+
+    cv = vytvor_cv()
+    radky = {}
+    celkem_start = time.perf_counter()
+    for nazev, model in modely.items():
+        start = time.perf_counter()
+        v = vyhodnot(model, X, y, cv)
+        cas = time.perf_counter() - start
+        radky[nazev] = {
+            "mcc_mean": v["mean"],
+            "mcc_std": v["std"],
+            "mcc_se": v["std"] / np.sqrt(len(v["scores"])),
+            "cas_s": cas,                              # celkový čas validace modelu
+            "cas_fold_s": cas / len(v["scores"]),      # průměrně na jeden fold
+        }
+    tab = pd.DataFrame(radky).T.sort_values("mcc_mean", ascending=False)
+    print(tab.round(4).to_string())
+    print(f"\nCelková doba běhu: {time.perf_counter() - celkem_start:.1f} s")
