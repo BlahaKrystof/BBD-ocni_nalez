@@ -207,6 +207,7 @@ if __name__ == "__main__":
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
     from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
     from sklearn.pipeline import make_pipeline
 
     from dataio.loader import nacti_xy
@@ -218,7 +219,8 @@ if __name__ == "__main__":
 
     def prep():
         # nová instance pro každý model (pipeline se nesmí sdílet)
-        return build_preprocessor(imputer=IMPUTER)
+        # engineer=("mean", "slope") engineer=("diff",) engineer=("ma_diff", "ex_mean") engineer=False
+        return build_preprocessor(imputer=IMPUTER, engineer=("diff",))
 
     # název imputeru se automaticky přidá do názvu modelu (např. logreg_knn)
     modely = {
@@ -228,6 +230,9 @@ if __name__ == "__main__":
         ),
         f"knn_{IMPUTER}": make_pipeline(
             prep(), KNeighborsClassifier(n_neighbors=15, weights="distance")
+        ),
+        f"lda_{IMPUTER}": make_pipeline(
+            prep(), LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")
         ),
     }
 

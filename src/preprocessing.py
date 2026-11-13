@@ -173,30 +173,69 @@ class ColumnWise(_FrameTransformer):
         return out
 
 
+ENGINEERED_FEATURES = ("ma_mean", "ma_slope", "ma_diff", "ex_mean", "ex_slope", "ex_diff")
+"""Skupiny odvozených příznaků, které lze zapnout ve FeatureEngineer / build_preprocessor."""
+
+
 class FeatureEngineer(_FrameTransformer):
     """Odvozené příznaky (volat PO logaritmu, imputaci i škálování).
 
-    Protože jsou ma_* a exsudaty_* tentýž signál při různých prazích, shrneme je:
-      ma_mean / ex_mean   - průměr přes všechny úrovně spolehlivosti
-      ma_slope / ex_slope - rozdíl nejpřísnější - nejmírnější úroveň
-                            (jak rychle detekce klesá s přísností prahu)
+    Protože jsou ma_* a exsudaty_* tentýž signál při různých prazích, lze je shrnout.
+    Parametr `features` určuje, které skupiny se přidají:
+
+      ma_mean / ex_mean   - průměr přes všechny úrovně spolehlivosti (1 příznak)
+      ma_slope / ex_slope - nejpřísnější - nejmírnější úroveň (1 příznak)
+      ma_diff / ex_diff   - rozdíly sousedních úrovní, další - předchozí
+                            (5 příznaků pro ma, 7 pro ex)
+
+    Zkratky "mean", "slope", "diff" zapnou skupinu pro ma i ex najednou.
+    Výchozí (None) = všechny skupiny z ENGINEERED_FEATURES.
+
+    Příklady:
+        FeatureEngineer()                                # všech 6 skupin (16 příznaků)
+        FeatureEngineer(features=("mean", "slope"))      # jen průměry a sklony (4)
+        FeatureEngineer(features=("ma_diff", "ex_mean")) # jen rozdíly ma a průměr ex
     """
 
-    def __init__(self, ma_cols=tuple(MA_COLS), ex_cols=tuple(EX_COLS)):
+    def __init__(self, ma_cols=tuple(MA_COLS), ex_cols=tuple(EX_COLS), features=None):
         self.ma_cols = ma_cols
         self.ex_cols = ex_cols
+        self.features = features
+
+    def _resolved_features(self) -> list[str]:
+        """Rozbalí zkratky a ověří názvy; vrací seznam bez duplicit v pevném pořadí."""
+        zadano = ENGINEERED_FEATURES if self.features is None else self.features
+        if isinstance(zadano, str):
+            zadano = (zadano,)
+        vybrano = set()
+        for f in zadano:
+            if f in ("mean", "slope", "diff"):
+                vybrano |= {f"ma_{f}", f"ex_{f}"}
+            elif f in ENGINEERED_FEATURES:
+                vybrano.add(f)
+            else:
+                raise ValueError(
+                    f"Neznámý odvozený příznak: {f!r}. "
+                    f"Povolené: {ENGINEERED_FEATURES} nebo zkratky 'mean', 'slope', 'diff'."
+                )
+        return [f for f in ENGINEERED_FEATURES if f in vybrano]
 
     def fit(self, X, y=None):
         self._fit_columns(X)
+        self.features_ = self._resolved_features()
         return self
 
     def transform(self, X):
         out = self._prepare(X)
-        ma, ex = list(self.ma_cols), list(self.ex_cols)
-        out["ma_mean"] = out[ma].mean(axis=1)
-        out["ma_slope"] = out[ma[-1]] - out[ma[0]]
-        out["ex_mean"] = out[ex].mean(axis=1)
-        out["ex_slope"] = out[ex[-1]] - out[ex[0]]
+        for prefix, cols in (("ma", list(self.ma_cols)), ("ex", list(self.ex_cols))):
+            if f"{prefix}_mean" in self.features_:
+                out[f"{prefix}_mean"] = out[cols].mean(axis=1)
+            if f"{prefix}_slope" in self.features_:
+                out[f"{prefix}_slope"] = out[cols[-1]] - out[cols[0]]
+            if f"{prefix}_diff" in self.features_:
+                for a, b in zip(cols[:-1], cols[1:]):
+                    # název např. ma_diff_01_02 (číslo úrovně z konce názvu sloupce)
+                    out[f"{prefix}_diff_{a[-2:]}_{b[-2:]}"] = out[b] - out[a]
         return out
 
 
@@ -245,7 +284,7 @@ def build_preprocessor(
     winsor: tuple[float, float] | None = (0.01, 0.99),
     log: bool = True,
     missing: str | None = "count",
-    engineer: bool = True,
+    engineer: bool | str | tuple = True,
     n_neighbors: int = 14,
 ) -> Pipeline:
     """Složí celé předzpracování do jedné Pipeline.
@@ -269,8 +308,9 @@ def build_preprocessor(
     if sc is not None:
         steps.append(("scaler", ColumnWise(sc, NUM_COLS)))
     steps.append(("imputer", ColumnWise(make_imputer(imputer, n_neighbors), FEATURE_COLS)))
-    if engineer:
-        steps.append(("feat", FeatureEngineer()))
+    if engineer:  # True = všechny skupiny; tuple/str = vybrané; False/None/() = žádné
+        feats = None if engineer is True else engineer
+        steps.append(("feat", FeatureEngineer(features=feats)))
     return Pipeline(steps)
 
 
