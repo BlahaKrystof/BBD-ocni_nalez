@@ -1,0 +1,65 @@
+{
+  "logreg": {
+    "build_preprocessor": {
+      "imputer": "iterative",
+      "scaler": null,
+      "winsor": null,
+      "log": false,
+      "missing": null,
+      "engineer": [
+        "mean"
+      ]
+    },
+    "model_varianta": "C=1",
+    "mcc_mean": 0.5335,
+    "mcc_se": 0.0119,
+    "mcc_reference": 0.4984
+  },
+  "lda": {
+    "build_preprocessor": {
+      "imputer": "iterative",
+      "scaler": "standard",
+      "winsor": null,
+      "log": true,
+      "missing": null,
+      "engineer": true
+    },
+    "model_varianta": "lsqr_auto",
+    "mcc_mean": 0.5321,
+    "mcc_se": 0.0102,
+    "mcc_reference": 0.5248
+  },
+  "rf": {
+    "build_preprocessor": {
+      "imputer": "iterative",
+      "scaler": "standard",
+      "winsor": [
+        0.005,
+        0.995
+      ],
+      "log": true,
+      "missing": "each",
+      "engineer": [
+        "diff"
+      ]
+    },
+    "model_varianta": "vychozi",
+    "mcc_mean": 0.5207,
+    "mcc_se": 0.0112,
+    "mcc_reference": 0.5102
+  },
+  "knn": {
+    "build_preprocessor": {
+      "imputer": "iterative",
+      "scaler": null,
+      "winsor": null,
+      "log": false,
+      "missing": "count",
+      "engineer": true
+    },
+    "model_varianta": "k=15_dist",
+    "mcc_mean": 0.3446,
+    "mcc_se": 0.0136,
+    "mcc_reference": 0.2336
+  }
+}

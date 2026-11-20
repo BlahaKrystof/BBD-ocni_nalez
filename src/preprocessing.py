@@ -280,11 +280,11 @@ def make_scaler(kind: str | None = "standard"):
 
 def build_preprocessor(
     imputer: str = "median",
-    scaler: str | None = "standard",
-    winsor: tuple[float, float] | None = (0.01, 0.99),
+    scaler: str | None = "robust",
+    winsor: tuple[float, float] | None = (0.02, 0.98),
     log: bool = True,
-    missing: str | None = "count",
-    engineer: bool | str | tuple = True,
+    missing: str | None = None,
+    engineer: bool | str | tuple = ('slope', 'diff'),
     n_neighbors: int = 14,
 ) -> Pipeline:
     """Složí celé předzpracování do jedné Pipeline.
