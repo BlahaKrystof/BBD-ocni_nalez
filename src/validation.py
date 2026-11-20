@@ -1,19 +1,20 @@
-"""Validace modelů: opakovaná stratifikovaná k-fold cross validace s metrikou MCC.
+"""Validace modelů: opakovaná stratifikovaná k-fold cross validace s metrikami
+MCC, senzitivita a specificita.
 
 Všechny kroky předzpracování a všechny modely se porovnávají přes tyto funkce
 na STEJNÝCH foldech (pevný random_state), takže jsou výsledky srovnatelné.
 
 Pravidla použití
-    - Celé předzpracování (imputace, ořezání, škálování) musí být uvnitř
+- Celé předzpracování (imputace, ořezání, škálování) musí být uvnitř
       sklearn.Pipeline, aby se učilo jen na trénovací části každého foldu
-      (jinak vzniká data leakage a MCC vyjde příliš optimistické).
-    - Pro odhad kvality po ladění hyperparametrů použijte `vnorena_cv`,
+      (jinak vzniká data leakage a metriky vyjdou příliš optimistické).
+- Pro odhad kvality po ladění hyperparametrů použijte `vnorena_cv`,
       ne `vyhodnot` na stejných datech.
 
 Hlavní funkce
     vytvor_cv     připraví objekt RepeatedStratifiedKFold,
-    vyhodnot      MCC jednoho modelu (průměr, směrodatná odchylka, všechny foldy),
-    porovnej      tabulka MCC pro více modelů na stejných foldech,
+    vyhodnot      MCC, senzitivita a specificita jednoho modelu po foldech,
+    porovnej      tabulka metrik pro více modelů na stejných foldech,
     vnorena_cv    nezkreslený odhad MCC modelu s laděním hyperparametrů,
     vyber_prah    práh rozhodnutí maximalizující MCC (z out-of-fold pravděpodobností).
 """
@@ -22,22 +23,31 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, clone
-from sklearn.metrics import make_scorer, matthews_corrcoef
+from sklearn.metrics import make_scorer, matthews_corrcoef, recall_score
 from sklearn.model_selection import (
     RandomizedSearchCV,
     RepeatedStratifiedKFold,
     StratifiedKFold,
     cross_val_predict,
     cross_val_score,
+    cross_validate,
 )
 
 SEED = 42
 """Výchozí náhodný seed"""
 
 SCORING = "matthews_corrcoef"
-"""Definování použité metriky (MCC)"""
+"""Definování hlavní použité metriky (MCC)"""
 
 _MCC_SCORER = make_scorer(matthews_corrcoef)
+_SENS_SCORER = make_scorer(recall_score, pos_label=1)
+_SPEC_SCORER = make_scorer(recall_score, pos_label=0)
+
+_METRIKY_SCORING = {
+    "mcc": _MCC_SCORER,
+    "sensitivity": _SENS_SCORER,
+    "specificity": _SPEC_SCORER,
+}
 
 
 def vytvor_cv(
@@ -48,7 +58,7 @@ def vytvor_cv(
     Args:
         n_splits: Počet foldů v jednom opakování (k). Výchozí 5.
         n_repeats: Počet opakování s jiným náhodným rozdělením. Výchozí 5,
-            celkem tedy n_splits * n_repeats hodnot MCC.
+            celkem tedy n_splits * n_repeats hodnot pro každou metriku.
         random_state: seed generátoru; ovlivňuje rozdělení do foldů.
 
     Returns:
@@ -65,7 +75,7 @@ def vyhodnot(
     y: pd.Series,
     cv: RepeatedStratifiedKFold | None = None,
 ) -> dict:
-    """Spočítá MCC modelu křížovou validací.
+    """Spočítá MCC, senzitivitu a specificitu modelu křížovou validací.
 
     Args:
         model: Sklearn estimator nebo Pipeline.
@@ -75,13 +85,34 @@ def vyhodnot(
 
     Returns:
         Slovník s klíči:
-            "mean":   průměrné MCC přes všechny foldy,
-            "std":    směrodatná odchylka MCC přes všechny foldy,
-            "scores": numpy pole MCC jednotlivých foldů (pořadí: opakování po opakování).
+            "mean", "std", "scores"             -> MCC přes všechny foldy,
+            "sens_mean", "sens_std", "sens_scores" -> senzitivita (třída 1),
+            "spec_mean", "spec_std", "spec_scores" -> specificita (třída 0).
     """
     cv = cv or vytvor_cv()
-    skore = cross_val_score(model, X, y, cv=cv, scoring=SCORING, n_jobs=-1)
-    return {"mean": float(skore.mean()), "std": float(skore.std()), "scores": skore}
+    vysledky = cross_validate(
+        model,
+        X,
+        y,
+        cv=cv,
+        scoring=_METRIKY_SCORING,
+        n_jobs=-1,
+        return_train_score=False,
+    )
+    mcc = vysledky["test_mcc"]
+    sens = vysledky["test_sensitivity"]
+    spec = vysledky["test_specificity"]
+    return {
+        "mean": float(mcc.mean()),
+        "std": float(mcc.std()),
+        "scores": mcc,
+        "sens_mean": float(sens.mean()),
+        "sens_std": float(sens.std()),
+        "sens_scores": sens,
+        "spec_mean": float(spec.mean()),
+        "spec_std": float(spec.std()),
+        "spec_scores": spec,
+    }
 
 
 def porovnej(
@@ -100,18 +131,24 @@ def porovnej(
             modely shodné, takže rozdíly nejsou způsobeny jiným dělením.
 
     Returns:
-        DataFrame seřazený sestupně podle průměrného MCC se sloupci
-        "mcc_mean", "mcc_std" a "mcc_se" (standardní chyba průměru; rozdíl
-        mezi modely menší než zhruba 2 * mcc_se je v rámci šumu).
+        DataFrame seřazený sestupně podle průměrného MCC se sloupci pro
+        MCC, senzitivitu a specificitu (průměr, směrodatná odchylka, SE).
     """
     cv = cv or vytvor_cv()
     radky = {}
     for nazev, model in modely.items():
         v = vyhodnot(model, X, y, cv)
+        n = len(v["scores"])
         radky[nazev] = {
             "mcc_mean": v["mean"],
             "mcc_std": v["std"],
-            "mcc_se": v["std"] / np.sqrt(len(v["scores"])),
+            "mcc_se": v["std"] / np.sqrt(n),
+            "sens_mean": v["sens_mean"],
+            "sens_std": v["sens_std"],
+            "sens_se": v["sens_std"] / np.sqrt(n),
+            "spec_mean": v["spec_mean"],
+            "spec_std": v["spec_std"],
+            "spec_se": v["spec_std"] / np.sqrt(n),
         }
     return pd.DataFrame(radky).T.sort_values("mcc_mean", ascending=False)
 
@@ -204,10 +241,10 @@ if __name__ == "__main__":
     import sys
     import time
 
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
     from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
     from sklearn.pipeline import make_pipeline
 
     from dataio.loader import nacti_xy
@@ -243,12 +280,19 @@ if __name__ == "__main__":
         start = time.perf_counter()
         v = vyhodnot(model, X, y, cv)
         cas = time.perf_counter() - start
+        n = len(v["scores"])
         radky[nazev] = {
             "mcc_mean": v["mean"],
             "mcc_std": v["std"],
-            "mcc_se": v["std"] / np.sqrt(len(v["scores"])),
-            "cas_s": cas,                              # celkový čas validace modelu
-            "cas_fold_s": cas / len(v["scores"]),      # průměrně na jeden fold
+            "mcc_se": v["std"] / np.sqrt(n),
+            "sens_mean": v["sens_mean"],
+            "sens_std": v["sens_std"],
+            "sens_se": v["sens_std"] / np.sqrt(n),
+            "spec_mean": v["spec_mean"],
+            "spec_std": v["spec_std"],
+            "spec_se": v["spec_std"] / np.sqrt(n),
+            "cas_s": cas,
+            "cas_fold_s": cas / n,
         }
     tab = pd.DataFrame(radky).T.sort_values("mcc_mean", ascending=False)
     print(f"Imputer: {IMPUTER}\n")
